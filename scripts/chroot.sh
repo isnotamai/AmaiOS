@@ -47,6 +47,34 @@ echo "[chroot] Setting locale and timezone..."
 locale-gen zh_TW.UTF-8 en_US.UTF-8
 update-locale LANG=zh_TW.UTF-8
 
+# ── Calamares installer branding ─────────────────────────────────────────────
+echo "[chroot] Patching Calamares branding..."
+BRANDING_DIR=""
+for d in /usr/share/calamares/branding/kubuntu \
+          /usr/share/calamares/branding/ubuntu \
+          /usr/share/calamares/branding/default; do
+    if [[ -d "$d" ]]; then
+        BRANDING_DIR="$d"
+        break
+    fi
+done
+
+if [[ -n "$BRANDING_DIR" ]]; then
+    sed -i \
+        -e 's/productName:.*/productName: AmaiOS/' \
+        -e 's/shortProductName:.*/shortProductName: AmaiOS/' \
+        -e 's/version:.*/version: "0.1"/' \
+        -e 's/product: .*/product: AmaiOS/' \
+        "$BRANDING_DIR/branding.desc" 2>/dev/null || true
+
+    # Replace all "Kubuntu" / "Ubuntu" references in branding
+    sed -i 's/Kubuntu/AmaiOS/g; s/Ubuntu/AmaiOS/g' \
+        "$BRANDING_DIR/branding.desc" 2>/dev/null || true
+    echo "[chroot] Calamares branding patched: $BRANDING_DIR"
+else
+    echo "[chroot] Warning: Calamares branding directory not found, skipping."
+fi
+
 # ── Cleanup ───────────────────────────────────────────────────────────────────
 echo "[chroot] Cleaning up..."
 apt-get autoremove -y
