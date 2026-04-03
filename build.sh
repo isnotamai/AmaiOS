@@ -11,9 +11,13 @@
 set -euo pipefail
 
 # ── Config ────────────────────────────────────────────────────────────────────
-BASE_ISO_NAME="kubuntu-24.04.1-desktop-amd64.iso"
-BASE_ISO_URL="https://cdimage.ubuntu.com/kubuntu/releases/24.04.1/release/$BASE_ISO_NAME"
+# You can override the ISO path:  sudo bash build.sh /path/to/kubuntu.iso
 OUTPUT_ISO="AmaiOS-0.1-amd64.iso"
+
+# Try these point releases in order until one downloads successfully
+CANDIDATE_VERSIONS=("24.04.2" "24.04.3" "24.04.4" "24.04.1")
+BASE_ISO_URL=""
+BASE_ISO_NAME=""
 
 WORK_DIR="$(pwd)/work"
 ISO_DIR="$WORK_DIR/iso"
@@ -39,11 +43,42 @@ for cmd in xorriso unsquashfs mksquashfs wget; do
     command -v "$cmd" &>/dev/null || error "Missing: $cmd  →  sudo apt-get install xorriso squashfs-tools wget mtools"
 done
 
-# ── Step 1: Download base ISO ─────────────────────────────────────────────────
+# ── Step 1: Find / download base ISO ─────────────────────────────────────────
 info "[1/6] Checking base ISO..."
-if [[ ! -f "$BASE_ISO_NAME" ]]; then
-    info "Downloading $BASE_ISO_NAME (~4 GB)..."
-    wget -c "$BASE_ISO_URL" -O "$BASE_ISO_NAME"
+
+# If user passed an ISO path as argument, use it directly
+if [[ -n "${1:-}" && -f "$1" ]]; then
+    BASE_ISO_NAME="$1"
+    ok "Using provided ISO: $BASE_ISO_NAME"
+else
+    # Check if any kubuntu iso already exists locally
+    LOCAL_ISO=$(ls kubuntu-24.04*-desktop-amd64.iso 2>/dev/null | head -1 || true)
+    if [[ -n "$LOCAL_ISO" ]]; then
+        BASE_ISO_NAME="$LOCAL_ISO"
+        ok "Found local ISO: $BASE_ISO_NAME"
+    else
+        # Try each candidate version
+        info "No local ISO found. Searching for latest Kubuntu 24.04..."
+        for VER in "${CANDIDATE_VERSIONS[@]}"; do
+            CANDIDATE_NAME="kubuntu-${VER}-desktop-amd64.iso"
+            CANDIDATE_URL="https://cdimage.ubuntu.com/kubuntu/releases/${VER}/release/${CANDIDATE_NAME}"
+            info "Trying $CANDIDATE_URL ..."
+            if wget --spider "$CANDIDATE_URL" 2>/dev/null; then
+                BASE_ISO_NAME="$CANDIDATE_NAME"
+                BASE_ISO_URL="$CANDIDATE_URL"
+                break
+            fi
+        done
+
+        if [[ -z "$BASE_ISO_URL" ]]; then
+            error "Could not find a Kubuntu 24.04 ISO to download.
+  Please download it manually from https://kubuntu.org/getkubuntu/
+  and place it in this directory, then re-run:  sudo bash build.sh"
+        fi
+
+        info "Downloading $BASE_ISO_NAME (~4 GB)..."
+        wget -c "$BASE_ISO_URL" -O "$BASE_ISO_NAME"
+    fi
 fi
 ok "Base ISO ready: $BASE_ISO_NAME"
 
