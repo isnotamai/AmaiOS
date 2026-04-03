@@ -143,12 +143,9 @@ info "[6/6] Repacking ISO..."
 # Regenerate squashfs
 rm -f "$ISO_DIR/casper/filesystem.squashfs"
 mksquashfs "$SQUASH_DIR" "$ISO_DIR/casper/filesystem.squashfs" \
-    -comp xz -noappend -no-progress \
-    -e "$SQUASH_DIR/proc/*" \
-    -e "$SQUASH_DIR/sys/*" \
-    -e "$SQUASH_DIR/dev/*" \
-    -e "$SQUASH_DIR/run/*" \
-    -e "$SQUASH_DIR/tmp/*"
+    -comp gzip -noappend -no-progress -processors 4 \
+    -wildcards \
+    -e "proc/*" -e "sys/*" -e "dev/*" -e "run/*" -e "tmp/*"
 printf "%s" "$(du -sx --block-size=1 "$SQUASH_DIR" | cut -f1)" \
     > "$ISO_DIR/casper/filesystem.size"
 
