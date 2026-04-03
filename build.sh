@@ -80,13 +80,16 @@ else
         wget -c "$BASE_ISO_URL" -O "$BASE_ISO_NAME"
     fi
 fi
-ok "Base ISO ready: $BASE_ISO_NAME"
+# Sanity check: ISO should be at least 2 GB
+ISO_SIZE=$(stat -c%s "$BASE_ISO_NAME" 2>/dev/null || echo 0)
+[[ "$ISO_SIZE" -lt 2000000000 ]] && error "ISO file is too small (${ISO_SIZE} bytes). Download may have failed. Delete it and retry."
+ok "Base ISO ready: $BASE_ISO_NAME ($(( ISO_SIZE / 1024 / 1024 )) MB)"
 
 # ── Step 2: Extract ISO ───────────────────────────────────────────────────────
 info "[2/6] Extracting ISO contents..."
 rm -rf "$ISO_DIR"
 mkdir -p "$ISO_DIR"
-xorriso -osirrox on -indev "$BASE_ISO_NAME" -extract / "$ISO_DIR" 2>/dev/null
+xorriso -osirrox on -indev "$BASE_ISO_NAME" -extract / "$ISO_DIR"
 chmod -R u+w "$ISO_DIR"
 ok "ISO extracted to $ISO_DIR"
 
