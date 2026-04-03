@@ -115,6 +115,12 @@ chmod +x "$SQUASH_DIR/tmp/chroot.sh"
 chroot "$SQUASH_DIR" /bin/bash /tmp/chroot.sh
 rm -f "$SQUASH_DIR/tmp/chroot.sh" "$SQUASH_DIR/tmp/packages.list" "$SQUASH_DIR/etc/resolv.conf"
 
+# Unmount immediately after chroot — must happen before mksquashfs
+info "Unmounting chroot filesystems..."
+for mnt in dev/pts dev run proc sys; do
+    mountpoint -q "$SQUASH_DIR/$mnt" 2>/dev/null && umount "$SQUASH_DIR/$mnt" || true
+done
+
 ok "Chroot customization complete"
 
 # ── Step 5: Apply branding ────────────────────────────────────────────────────
@@ -137,7 +143,12 @@ info "[6/6] Repacking ISO..."
 # Regenerate squashfs
 rm -f "$ISO_DIR/casper/filesystem.squashfs"
 mksquashfs "$SQUASH_DIR" "$ISO_DIR/casper/filesystem.squashfs" \
-    -comp xz -noappend -no-progress
+    -comp xz -noappend -no-progress \
+    -e "$SQUASH_DIR/proc/*" \
+    -e "$SQUASH_DIR/sys/*" \
+    -e "$SQUASH_DIR/dev/*" \
+    -e "$SQUASH_DIR/run/*" \
+    -e "$SQUASH_DIR/tmp/*"
 printf "%s" "$(du -sx --block-size=1 "$SQUASH_DIR" | cut -f1)" \
     > "$ISO_DIR/casper/filesystem.size"
 
