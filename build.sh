@@ -15,7 +15,7 @@ set -euo pipefail
 OUTPUT_ISO="AmaiOS-0.1-amd64.iso"
 
 # Try these point releases in order until one downloads successfully
-CANDIDATE_VERSIONS=("24.04.2" "24.04.3" "24.04.4" "24.04.1")
+CANDIDATE_VERSIONS=("24.04.3" "24.04.4" "24.04.2" "24.04.1")
 BASE_ISO_URL=""
 BASE_ISO_NAME=""
 
