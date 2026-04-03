@@ -154,15 +154,22 @@ pushd "$ISO_DIR" > /dev/null
 find . -type f ! -name 'md5sum.txt' | sort | xargs md5sum > md5sum.txt
 popd > /dev/null
 
+# Extract boot files from original ISO (not included in the extracted contents)
+info "Extracting boot sectors from original ISO..."
+dd if="$BASE_ISO_NAME" bs=1 count=432 of="$WORK_DIR/boot_hybrid.img" 2>/dev/null
+EFI_OFFSET=$(fdisk -l "$BASE_ISO_NAME" | grep "EFI System" | awk '{print $2}')
+EFI_SIZE=$(fdisk -l "$BASE_ISO_NAME" | grep "EFI System" | awk '{print $4}')
+dd if="$BASE_ISO_NAME" bs=512 skip="$EFI_OFFSET" count="$EFI_SIZE" of="$WORK_DIR/efi.img" 2>/dev/null
+
 # Build final ISO (BIOS + EFI hybrid)
 xorriso -as mkisofs \
-    -r -V "AmaiOS 0.1" \
+    -r -V "AmaiOS_0.1" \
     -o "$OUTPUT_ISO" \
-    --grub2-mbr "$ISO_DIR/boot/grub/i386-pc/boot_hybrid.img" \
+    --grub2-mbr "$WORK_DIR/boot_hybrid.img" \
     -partition_offset 16 \
     --mbr-force-bootable \
     -append_partition 2 28732ac11ff8d211ba4b00a0c93ec93b \
-        "$ISO_DIR/boot/grub/efi.img" \
+        "$WORK_DIR/efi.img" \
     -appended_part_as_gpt \
     -iso_mbr_part_type a2a0d0ebe5b9334487c068b6b72699c7 \
     -c '/boot/boot.cat' \
