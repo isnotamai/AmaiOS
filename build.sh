@@ -114,9 +114,17 @@ mount -t sysfs sysfs  "$SQUASH_DIR/sys"
 
 cp scripts/chroot.sh    "$SQUASH_DIR/tmp/chroot.sh"
 cp config/packages.list "$SQUASH_DIR/tmp/packages.list"
+
+# Copy Calamares branding files into chroot so chroot.sh can install them
+if [[ -d config/calamares ]]; then
+    cp -r config/calamares "$SQUASH_DIR/tmp/calamares-branding"
+    info "Calamares branding files staged for chroot"
+fi
+
 chmod +x "$SQUASH_DIR/tmp/chroot.sh"
 chroot "$SQUASH_DIR" /bin/bash /tmp/chroot.sh
-rm -f "$SQUASH_DIR/tmp/chroot.sh" "$SQUASH_DIR/tmp/packages.list" "$SQUASH_DIR/etc/resolv.conf"
+rm -f  "$SQUASH_DIR/tmp/chroot.sh" "$SQUASH_DIR/tmp/packages.list" "$SQUASH_DIR/etc/resolv.conf"
+rm -rf "$SQUASH_DIR/tmp/calamares-branding"
 
 # Unmount immediately after chroot
 info "Unmounting chroot filesystems..."
@@ -166,10 +174,16 @@ else
     warn "branding/wallpaper.jpg not found — using default KDE wallpaper"
 fi
 
-# Custom logo (used by fastfetch / about-distro)
+# Custom logo (used by fastfetch / Calamares / about-distro)
 if [[ -f branding/logo.png ]]; then
     mkdir -p "$SQUASH_DIR/usr/share/pixmaps"
     cp branding/logo.png "$SQUASH_DIR/usr/share/pixmaps/amaios-logo.png"
+
+    # Also place logo inside the Calamares branding directory
+    CALA_BRANDING="$SQUASH_DIR/usr/share/calamares/branding/amaios"
+    if [[ -d "$CALA_BRANDING" ]]; then
+        cp branding/logo.png "$CALA_BRANDING/logo.png"
+    fi
     ok "Logo installed"
 fi
 

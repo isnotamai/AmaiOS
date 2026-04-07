@@ -98,46 +98,53 @@ for f in /usr/share/plymouth/themes/*/plymouth-theme.conf \
 done
 
 # ── Calamares installer branding ─────────────────────────────────────────────
-echo "[chroot] Patching Calamares branding..."
-BRANDING_DIR=""
-for d in /usr/share/calamares/branding/kubuntu \
-          /usr/share/calamares/branding/ubuntu \
-          /usr/share/calamares/branding/default; do
-    if [[ -d "$d" ]]; then
-        BRANDING_DIR="$d"
-        break
+echo "[chroot] Installing AmaiOS Calamares branding..."
+
+AMAIOS_BRANDING="/usr/share/calamares/branding/amaios"
+mkdir -p "$AMAIOS_BRANDING"
+
+# Copy pre-built branding files (placed here by build.sh before chroot)
+if [[ -d /tmp/calamares-branding ]]; then
+    cp -r /tmp/calamares-branding/. "$AMAIOS_BRANDING/"
+    echo "[chroot] Custom branding files installed to $AMAIOS_BRANDING"
+fi
+
+# Copy logo from pixmaps if available (wallpaper/logo placed by build.sh)
+if [[ -f /usr/share/pixmaps/amaios-logo.png ]]; then
+    cp /usr/share/pixmaps/amaios-logo.png "$AMAIOS_BRANDING/logo.png"
+fi
+
+# Tell Calamares to use the amaios branding
+CALAMARES_SETTINGS="/etc/calamares/settings.conf"
+if [[ -f "$CALAMARES_SETTINGS" ]]; then
+    sed -i 's/branding: .*/branding: amaios/' "$CALAMARES_SETTINGS"
+    echo "[chroot] Calamares settings.conf updated: branding → amaios"
+else
+    # Kubuntu may store settings.conf elsewhere; search for it
+    for f in /usr/share/calamares/settings.conf \
+              /usr/lib/calamares/settings.conf; do
+        if [[ -f "$f" ]]; then
+            sed -i 's/branding: .*/branding: amaios/' "$f"
+            echo "[chroot] Patched: $f"
+        fi
+    done
+fi
+
+# Patch Calamares locale module defaults
+for f in /etc/calamares/modules/locale.conf \
+         /usr/share/calamares/modules/locale.conf; do
+    if [[ -f "$f" ]]; then
+        sed -i \
+            -e 's/region:.*/region: Asia/' \
+            -e 's/zone:.*/zone: Taipei/' \
+            "$f" 2>/dev/null || true
+        echo "[chroot] Locale defaults set in $f"
     fi
 done
 
-if [[ -n "$BRANDING_DIR" ]]; then
-    sed -i \
-        -e 's/productName:.*/productName: AmaiOS/' \
-        -e 's/shortProductName:.*/shortProductName: AmaiOS/' \
-        -e 's/version:.*/version: "0.1"/' \
-        -e 's/product: .*/product: AmaiOS/' \
-        -e 's|supportUrl:.*|supportUrl: "https://github.com/Amai-OS/AmaiOS/issues"|' \
-        -e 's|knownIssuesUrl:.*|knownIssuesUrl: "https://github.com/Amai-OS/AmaiOS/issues"|' \
-        "$BRANDING_DIR/branding.desc" 2>/dev/null || true
-
-    sed -i 's/Kubuntu/AmaiOS/g; s/Ubuntu/AmaiOS/g' \
-        "$BRANDING_DIR/branding.desc" 2>/dev/null || true
-
-    # Also patch any QML slides
-    find "$BRANDING_DIR" -name "*.qml" -exec \
-        sed -i 's/Kubuntu/AmaiOS/g; s/Ubuntu/AmaiOS/g' {} \; 2>/dev/null || true
-
-    echo "[chroot] Calamares branding patched: $BRANDING_DIR"
-else
-    echo "[chroot] Warning: Calamares branding directory not found, skipping."
-fi
-
-# Patch Calamares settings to set default locale
-if [[ -f /etc/calamares/modules/locale.conf ]]; then
-    sed -i \
-        -e 's/region:.*/region: Asia/' \
-        -e 's/zone:.*/zone: Taipei/' \
-        /etc/calamares/modules/locale.conf 2>/dev/null || true
-fi
+# Patch any remaining Kubuntu references in other Calamares configs
+find /usr/share/calamares /etc/calamares -type f \( -name "*.conf" -o -name "*.desc" \) \
+    -exec sed -i 's/Kubuntu/AmaiOS/g; s/kubuntu/amaios/g' {} \; 2>/dev/null || true
 
 # ── KDE Plasma defaults (applied to /etc/skel so new users get them) ─────────
 echo "[chroot] Configuring KDE Plasma defaults..."
