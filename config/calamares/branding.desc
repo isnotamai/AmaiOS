@@ -1,0 +1,39 @@
+---
+# AmaiOS Calamares Branding
+# 此檔案在 build.sh 中被複製到 /usr/share/calamares/branding/amaios/
+
+componentName: amaios
+
+# ── 顯示名稱 ──────────────────────────────────────────────────────────────────
+strings:
+    productName:         AmaiOS
+    shortProductName:    AmaiOS
+    version:             "0.1"
+    versionedName:       "AmaiOS 0.1"
+    shortVersionedName:  "AmaiOS 0.1"
+    bootloaderEntryName: AmaiOS
+    productUrl:          "https://github.com/isnotamai/AmaiOS"
+    supportUrl:          "https://github.com/isnotamai/AmaiOS/issues"
+    knownIssuesUrl:      "https://github.com/isnotamai/AmaiOS/issues"
+    releaseNotesUrl:     "https://github.com/isnotamai/AmaiOS/releases"
+
+# ── 圖示 ──────────────────────────────────────────────────────────────────────
+images:
+    productLogo:    "logo.png"
+    productIcon:    "logo.png"
+    productWelcome: "welcome.png"
+
+# ── 視窗設定 ──────────────────────────────────────────────────────────────────
+slideshow: "show.qml"
+slideshowAPI: 2
+
+windowExpanding:  normal
+windowSize:       "800px, 520px"
+windowPlacement:  center
+
+# ── 外觀 ──────────────────────────────────────────────────────────────────────
+style:
+    sidebarBackground:   "#1a1a2e"
+    sidebarText:         "#e0e0e0"
+    sidebarTextSelect:   "#64b5f6"
+    sidebarBackgroundSelected: "#16213e"
