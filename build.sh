@@ -106,11 +106,23 @@ ok "Filesystem extracted to $SQUASH_DIR"
 info "[4/7] Entering chroot for customization..."
 
 cp /etc/resolv.conf "$SQUASH_DIR/etc/resolv.conf"
+
+# Ensure /dev/null is a proper char device before bind-mounting /dev.
+# In some environments (containers, WSL2) the squashfs /dev/null may be
+# a plain file or have wrong permissions, causing apt-key to fail.
+if [[ ! -c "$SQUASH_DIR/dev/null" ]]; then
+    rm -f "$SQUASH_DIR/dev/null"
+    mknod -m 0666 "$SQUASH_DIR/dev/null" c 1 3
+fi
+
 mount --bind /dev     "$SQUASH_DIR/dev"
 mount --bind /dev/pts "$SQUASH_DIR/dev/pts"
 mount --bind /run     "$SQUASH_DIR/run"
 mount -t proc  proc   "$SQUASH_DIR/proc"
 mount -t sysfs sysfs  "$SQUASH_DIR/sys"
+
+# Double-check /dev/null is accessible inside the chroot after bind mount
+chmod 0666 "$SQUASH_DIR/dev/null" 2>/dev/null || true
 
 cp scripts/chroot.sh    "$SQUASH_DIR/tmp/chroot.sh"
 cp config/packages.list "$SQUASH_DIR/tmp/packages.list"

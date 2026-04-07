@@ -1,5 +1,6 @@
 # AmaiOS extra packages
 # One package per line. Lines starting with # are ignored.
+# Requires: universe + multiverse repos (enabled automatically by chroot.sh)
 
 # ── 瀏覽器 ────────────────────────────────────────────────────────────────────
 firefox
@@ -18,7 +19,6 @@ fastfetch
 git
 curl
 wget
-gzip
 zip
 unzip
 p7zip-full
@@ -36,8 +36,8 @@ kdeconnect
 
 # ── 字型 ──────────────────────────────────────────────────────────────────────
 fonts-noto-cjk
-fonts-noto-cjk-extra
 fonts-wqy-zenhei
+# ttf-mscorefonts-installer 需要 multiverse，已預先接受 EULA
 ttf-mscorefonts-installer
 
 # ── 輸入法 ───────────────────────────────────────────────────────────────────

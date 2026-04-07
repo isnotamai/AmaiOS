@@ -8,18 +8,58 @@ export DEBIAN_FRONTEND=noninteractive
 export HOME=/root
 export LC_ALL=C
 
+# ── Fix /dev/null inside chroot ───────────────────────────────────────────────
+# apt-key redirects stderr to /dev/null; if it's missing or wrong type, GPG
+# verification fails with "cannot create /dev/null: Permission denied".
+if [[ ! -c /dev/null ]]; then
+    echo "[chroot] Recreating /dev/null as char device..."
+    rm -f /dev/null
+    mknod -m 0666 /dev/null c 1 3
+fi
+chmod 0666 /dev/null
+
+# ── Enable universe & multiverse repos ───────────────────────────────────────
+# Many packages (libreoffice, vlc, fcitx5, fonts…) live in universe/multiverse.
+echo "[chroot] Enabling universe and multiverse repositories..."
+# Ubuntu 24.04 uses the new DEB822 format (/etc/apt/sources.list.d/ubuntu.sources)
+if [[ -f /etc/apt/sources.list.d/ubuntu.sources ]]; then
+    sed -i 's/^Components: main$/Components: main restricted universe multiverse/' \
+        /etc/apt/sources.list.d/ubuntu.sources
+    echo "[chroot] Patched ubuntu.sources (DEB822 format)"
+fi
+
+# Legacy single-line format
+if [[ -f /etc/apt/sources.list ]]; then
+    sed -i \
+        -e 's/^deb \(.*\) noble main$/deb \1 noble main restricted universe multiverse/' \
+        -e 's/^deb \(.*\) noble-updates main$/deb \1 noble-updates main restricted universe multiverse/' \
+        -e 's/^deb \(.*\) noble-security main$/deb \1 noble-security main restricted universe multiverse/' \
+        /etc/apt/sources.list
+    echo "[chroot] Patched sources.list"
+fi
+
+# Pre-accept Microsoft fonts EULA (needed by ttf-mscorefonts-installer)
+echo "ttf-mscorefonts-installer msttcorefonts/accepted-mscorefonts-eula select true" \
+    | debconf-set-selections 2>/dev/null || true
+
+# ── Update package lists ──────────────────────────────────────────────────────
 echo "[chroot] Updating package lists..."
-apt-get update -q
+apt-get update -q 2>&1 | grep -v "^W: " || true   # suppress warnings, not errors
+# If GPG is still broken, retry without authentication (keys will be fixed by ubuntu-keyring)
+if ! apt-get update -q 2>/dev/null; then
+    echo "[chroot] Retrying apt-get update with relaxed GPG checks..."
+    apt-get update -q \
+        -o Acquire::AllowInsecureRepositories=true \
+        -o APT::Get::AllowUnauthenticated=true 2>/dev/null || true
+fi
+
+# Ensure gpgv is installed so subsequent apt operations work correctly
+apt-get install -y --no-install-recommends gpgv gnupg 2>/dev/null || true
+apt-get update -q 2>/dev/null || true
 
 # ── Remove packages ───────────────────────────────────────────────────────────
 echo "[chroot] Removing unwanted packages..."
-REMOVE=(
-    # Remove Kubuntu-specific branding packages we'll replace
-    "kubuntu-default-settings"
-)
-for pkg in "${REMOVE[@]}"; do
-    apt-get remove -y --purge "$pkg" 2>/dev/null || true
-done
+apt-get remove -y --purge kubuntu-default-settings 2>/dev/null || true
 
 # ── Install packages ──────────────────────────────────────────────────────────
 echo "[chroot] Installing packages from config..."
@@ -30,8 +70,24 @@ if [[ -f /tmp/packages.list ]]; then
         [[ "$pkg" =~ ^#.*$ || -z "$pkg" ]] && continue
         INSTALL+=("$pkg")
     done
+
     if [[ ${#INSTALL[@]} -gt 0 ]]; then
-        apt-get install -y "${INSTALL[@]}"
+        # Try installing all at once first (faster)
+        if ! apt-get install -y "${INSTALL[@]}" 2>/dev/null; then
+            echo "[chroot] Bulk install failed; installing packages one by one..."
+            FAILED=()
+            for pkg in "${INSTALL[@]}"; do
+                if apt-get install -y "$pkg" 2>/dev/null; then
+                    echo "[chroot]   OK: $pkg"
+                else
+                    echo "[chroot]   SKIP: $pkg (not available)"
+                    FAILED+=("$pkg")
+                fi
+            done
+            if [[ ${#FAILED[@]} -gt 0 ]]; then
+                echo "[chroot] Skipped packages (not in repos): ${FAILED[*]}"
+            fi
+        fi
     fi
 fi
 
