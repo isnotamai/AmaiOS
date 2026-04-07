@@ -2,17 +2,18 @@
 # AmaiOS Build Script
 # Base: Kubuntu 24.04 LTS (KDE Plasma)
 #
-# Requirements (WSL2 Ubuntu):
+# Requirements (Ubuntu / Debian / WSL2):
 #   sudo apt-get install xorriso squashfs-tools wget mtools
 #
 # Usage:
-#   sudo bash build.sh
+#   sudo bash build.sh [/path/to/kubuntu.iso]
 
 set -euo pipefail
 
 # ── Config ────────────────────────────────────────────────────────────────────
-# You can override the ISO path:  sudo bash build.sh /path/to/kubuntu.iso
-OUTPUT_ISO="AmaiOS-0.1-amd64.iso"
+AMAIOS_VERSION="0.1"
+OUTPUT_ISO="AmaiOS-${AMAIOS_VERSION}-amd64.iso"
+ISO_LABEL="AmaiOS_${AMAIOS_VERSION//./_}"
 
 # Try these point releases in order until one downloads successfully
 CANDIDATE_VERSIONS=("24.04.3" "24.04.4" "24.04.2" "24.04.1")
@@ -23,9 +24,14 @@ WORK_DIR="$(pwd)/work"
 ISO_DIR="$WORK_DIR/iso"
 SQUASH_DIR="$WORK_DIR/squashfs"
 
+# Compression: use xz for smaller ISOs (slower), gzip for faster builds
+SQUASH_COMP="${SQUASH_COMP:-gzip}"
+SQUASH_PROCS="${SQUASH_PROCS:-$(nproc)}"
+
 # ── Helpers ───────────────────────────────────────────────────────────────────
 info()  { echo -e "\033[1;34m[*]\033[0m $*"; }
 ok()    { echo -e "\033[1;32m[+]\033[0m $*"; }
+warn()  { echo -e "\033[1;33m[!]\033[0m $*"; }
 error() { echo -e "\033[1;31m[!]\033[0m $*" >&2; exit 1; }
 
 cleanup() {
@@ -44,20 +50,17 @@ for cmd in xorriso unsquashfs mksquashfs wget; do
 done
 
 # ── Step 1: Find / download base ISO ─────────────────────────────────────────
-info "[1/6] Checking base ISO..."
+info "[1/7] Checking base ISO..."
 
-# If user passed an ISO path as argument, use it directly
 if [[ -n "${1:-}" && -f "$1" ]]; then
     BASE_ISO_NAME="$1"
     ok "Using provided ISO: $BASE_ISO_NAME"
 else
-    # Check if any kubuntu iso already exists locally
     LOCAL_ISO=$(ls kubuntu-24.04*-desktop-amd64.iso 2>/dev/null | head -1 || true)
     if [[ -n "$LOCAL_ISO" ]]; then
         BASE_ISO_NAME="$LOCAL_ISO"
         ok "Found local ISO: $BASE_ISO_NAME"
     else
-        # Try each candidate version
         info "No local ISO found. Searching for latest Kubuntu 24.04..."
         for VER in "${CANDIDATE_VERSIONS[@]}"; do
             CANDIDATE_NAME="kubuntu-${VER}-desktop-amd64.iso"
@@ -80,13 +83,13 @@ else
         wget -c "$BASE_ISO_URL" -O "$BASE_ISO_NAME"
     fi
 fi
-# Sanity check: ISO should be at least 2 GB
+
 ISO_SIZE=$(stat -c%s "$BASE_ISO_NAME" 2>/dev/null || echo 0)
 [[ "$ISO_SIZE" -lt 2000000000 ]] && error "ISO file is too small (${ISO_SIZE} bytes). Download may have failed. Delete it and retry."
 ok "Base ISO ready: $BASE_ISO_NAME ($(( ISO_SIZE / 1024 / 1024 )) MB)"
 
 # ── Step 2: Extract ISO ───────────────────────────────────────────────────────
-info "[2/6] Extracting ISO contents..."
+info "[2/7] Extracting ISO contents..."
 rm -rf "$ISO_DIR"
 mkdir -p "$ISO_DIR"
 xorriso -osirrox on -indev "$BASE_ISO_NAME" -extract / "$ISO_DIR"
@@ -94,13 +97,13 @@ chmod -R u+w "$ISO_DIR"
 ok "ISO extracted to $ISO_DIR"
 
 # ── Step 3: Extract squashfs filesystem ───────────────────────────────────────
-info "[3/6] Extracting root filesystem (this may take a while)..."
+info "[3/7] Extracting root filesystem (this may take a while)..."
 rm -rf "$SQUASH_DIR"
 unsquashfs -d "$SQUASH_DIR" "$ISO_DIR/casper/filesystem.squashfs"
 ok "Filesystem extracted to $SQUASH_DIR"
 
 # ── Step 4: Chroot customization ──────────────────────────────────────────────
-info "[4/6] Entering chroot for customization..."
+info "[4/7] Entering chroot for customization..."
 
 cp /etc/resolv.conf "$SQUASH_DIR/etc/resolv.conf"
 mount --bind /dev     "$SQUASH_DIR/dev"
@@ -109,13 +112,13 @@ mount --bind /run     "$SQUASH_DIR/run"
 mount -t proc  proc   "$SQUASH_DIR/proc"
 mount -t sysfs sysfs  "$SQUASH_DIR/sys"
 
-cp scripts/chroot.sh "$SQUASH_DIR/tmp/chroot.sh"
+cp scripts/chroot.sh    "$SQUASH_DIR/tmp/chroot.sh"
 cp config/packages.list "$SQUASH_DIR/tmp/packages.list"
 chmod +x "$SQUASH_DIR/tmp/chroot.sh"
 chroot "$SQUASH_DIR" /bin/bash /tmp/chroot.sh
 rm -f "$SQUASH_DIR/tmp/chroot.sh" "$SQUASH_DIR/tmp/packages.list" "$SQUASH_DIR/etc/resolv.conf"
 
-# Unmount immediately after chroot — must happen before mksquashfs
+# Unmount immediately after chroot
 info "Unmounting chroot filesystems..."
 for mnt in dev/pts dev run proc sys; do
     mountpoint -q "$SQUASH_DIR/$mnt" 2>/dev/null && umount "$SQUASH_DIR/$mnt" || true
@@ -124,46 +127,121 @@ done
 ok "Chroot customization complete"
 
 # ── Step 5: Apply branding ────────────────────────────────────────────────────
-info "[5/6] Applying AmaiOS branding..."
+info "[5/7] Applying AmaiOS branding..."
 
+# os-release
 cp config/os-release "$SQUASH_DIR/etc/os-release"
+# lsb_release compatibility
+cat > "$SQUASH_DIR/etc/lsb-release" <<EOF
+DISTRIB_ID=AmaiOS
+DISTRIB_RELEASE=${AMAIOS_VERSION}
+DISTRIB_CODENAME=noble
+DISTRIB_DESCRIPTION="AmaiOS ${AMAIOS_VERSION}"
+EOF
 
-# Copy wallpaper if provided
+# Wallpaper
 if [[ -f branding/wallpaper.jpg ]]; then
-    cp branding/wallpaper.jpg "$SQUASH_DIR/usr/share/wallpapers/AmaiOS.jpg"
+    WALLPAPER_DIR="$SQUASH_DIR/usr/share/wallpapers/AmaiOS"
+    mkdir -p "$WALLPAPER_DIR/contents/images"
+    cp branding/wallpaper.jpg "$WALLPAPER_DIR/contents/images/3840x2160.jpg"
+    cat > "$WALLPAPER_DIR/metadata.json" <<EOF
+{
+    "KPlugin": {
+        "Id": "AmaiOS",
+        "Name": "AmaiOS Default Wallpaper",
+        "License": "CC-BY-SA-4.0"
+    }
+}
+EOF
+    ok "Wallpaper installed"
+
+    # Set as KDE default via plasma-org.kde.plasma.desktop-appletsrc
+    SKEL_PLASMA="$SQUASH_DIR/etc/skel/.config"
+    mkdir -p "$SKEL_PLASMA"
+    cat > "$SKEL_PLASMA/plasma-org.kde.plasma.desktop-appletsrc" <<EOF
+[Containments][1][Wallpaper][org.kde.image][General]
+Image=file:///usr/share/wallpapers/AmaiOS/contents/images/3840x2160.jpg
+EOF
+else
+    warn "branding/wallpaper.jpg not found — using default KDE wallpaper"
 fi
 
-# Update ISO label file
-sed -i 's/Kubuntu/AmaiOS/g' "$ISO_DIR/README.diskdefines" 2>/dev/null || true
+# Custom logo (used by fastfetch / about-distro)
+if [[ -f branding/logo.png ]]; then
+    mkdir -p "$SQUASH_DIR/usr/share/pixmaps"
+    cp branding/logo.png "$SQUASH_DIR/usr/share/pixmaps/amaios-logo.png"
+    ok "Logo installed"
+fi
+
+# Patch ISO label files
+sed -i 's/Kubuntu/AmaiOS/g; s/kubuntu/amaios/g' \
+    "$ISO_DIR/README.diskdefines" 2>/dev/null || true
+sed -i 's/Kubuntu/AmaiOS/g' \
+    "$ISO_DIR/.disk/info" 2>/dev/null || true
+echo "AmaiOS ${AMAIOS_VERSION} \"Noble Numbat\" - Release amd64 ($(date +%Y%m%d))" \
+    > "$ISO_DIR/.disk/info" 2>/dev/null || true
+
+# Patch GRUB menu entries
+for grub_cfg in \
+    "$ISO_DIR/boot/grub/grub.cfg" \
+    "$ISO_DIR/boot/grub/loopback.cfg" \
+    "$ISO_DIR/EFI/boot/grub.cfg"; do
+    if [[ -f "$grub_cfg" ]]; then
+        sed -i \
+            -e 's/Kubuntu/AmaiOS/g' \
+            -e 's/kubuntu/amaios/g' \
+            -e 's/Ubuntu/AmaiOS/g' \
+            "$grub_cfg"
+        ok "Patched: $grub_cfg"
+    fi
+done
+
 ok "Branding applied"
 
-# ── Step 6: Repack ISO ────────────────────────────────────────────────────────
-info "[6/6] Repacking ISO..."
+# ── Step 6: Repack squashfs ────────────────────────────────────────────────────
+info "[6/7] Repacking filesystem (compression: ${SQUASH_COMP}, CPUs: ${SQUASH_PROCS})..."
 
-# Regenerate squashfs
 rm -f "$ISO_DIR/casper/filesystem.squashfs"
 mksquashfs "$SQUASH_DIR" "$ISO_DIR/casper/filesystem.squashfs" \
-    -comp gzip -noappend -no-progress -processors 4 \
+    -comp "$SQUASH_COMP" -noappend -no-progress \
+    -processors "$SQUASH_PROCS" \
     -wildcards \
     -e "proc/*" -e "sys/*" -e "dev/*" -e "run/*" -e "tmp/*"
+
 printf "%s" "$(du -sx --block-size=1 "$SQUASH_DIR" | cut -f1)" \
     > "$ISO_DIR/casper/filesystem.size"
 
-# Regenerate md5sums
+# Update manifest (list of installed packages)
+chroot "$SQUASH_DIR" dpkg-query -W --showformat='${Package} ${Version}\n' \
+    > "$ISO_DIR/casper/filesystem.manifest" 2>/dev/null || true
+
+# Regenerate md5sums (skip the md5sum.txt itself and the squashfs)
 pushd "$ISO_DIR" > /dev/null
 find . -type f ! -name 'md5sum.txt' | sort | xargs md5sum > md5sum.txt
 popd > /dev/null
 
-# Extract boot files from original ISO (not included in the extracted contents)
+ok "Squashfs repacked"
+
+# ── Step 7: Repack ISO ────────────────────────────────────────────────────────
+info "[7/7] Repacking ISO..."
+
+# Extract boot sectors from original ISO
 info "Extracting boot sectors from original ISO..."
 dd if="$BASE_ISO_NAME" bs=1 count=432 of="$WORK_DIR/boot_hybrid.img" 2>/dev/null
+
 EFI_OFFSET=$(fdisk -l "$BASE_ISO_NAME" | grep "EFI System" | awk '{print $2}')
-EFI_SIZE=$(fdisk -l "$BASE_ISO_NAME" | grep "EFI System" | awk '{print $4}')
-dd if="$BASE_ISO_NAME" bs=512 skip="$EFI_OFFSET" count="$EFI_SIZE" of="$WORK_DIR/efi.img" 2>/dev/null
+EFI_SIZE=$(fdisk -l "$BASE_ISO_NAME"   | grep "EFI System" | awk '{print $4}')
+
+if [[ -z "$EFI_OFFSET" || -z "$EFI_SIZE" ]]; then
+    error "Could not parse EFI partition from base ISO. Is fdisk available?"
+fi
+
+dd if="$BASE_ISO_NAME" bs=512 skip="$EFI_OFFSET" count="$EFI_SIZE" \
+    of="$WORK_DIR/efi.img" 2>/dev/null
 
 # Build final ISO (BIOS + EFI hybrid)
 xorriso -as mkisofs \
-    -r -V "AmaiOS_0.1" \
+    -r -V "$ISO_LABEL" \
     -o "$OUTPUT_ISO" \
     --grub2-mbr "$WORK_DIR/boot_hybrid.img" \
     -partition_offset 16 \
@@ -180,6 +258,11 @@ xorriso -as mkisofs \
     -no-emul-boot \
     "$ISO_DIR"
 
+# Print checksum
+SHA256=$(sha256sum "$OUTPUT_ISO" | awk '{print $1}')
+echo "$SHA256  $OUTPUT_ISO" > "${OUTPUT_ISO}.sha256"
+
 ok "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 ok "Build complete!  →  $OUTPUT_ISO"
+ok "SHA-256: $SHA256"
 ok "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

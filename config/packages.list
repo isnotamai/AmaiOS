@@ -1,10 +1,48 @@
 # AmaiOS extra packages
 # One package per line. Lines starting with # are ignored.
-#
-# Examples — uncomment to include:
-# vlc
-# gimp
-# libreoffice
-# firefox
-# neofetch
-# htop
+
+# ── 瀏覽器 ────────────────────────────────────────────────────────────────────
+firefox
+
+# ── 辦公室套件 ───────────────────────────────────────────────────────────────
+libreoffice
+libreoffice-l10n-zh-tw
+libreoffice-help-zh-tw
+
+# ── 多媒體 ───────────────────────────────────────────────────────────────────
+vlc
+
+# ── 系統工具 ──────────────────────────────────────────────────────────────────
+htop
+fastfetch
+git
+curl
+wget
+gzip
+zip
+unzip
+p7zip-full
+
+# ── KDE 應用程式 ──────────────────────────────────────────────────────────────
+ark
+gwenview
+okular
+kate
+spectacle
+kcalc
+filelight
+partitionmanager
+kdeconnect
+
+# ── 字型 ──────────────────────────────────────────────────────────────────────
+fonts-noto-cjk
+fonts-noto-cjk-extra
+fonts-wqy-zenhei
+ttf-mscorefonts-installer
+
+# ── 輸入法 ───────────────────────────────────────────────────────────────────
+fcitx5
+fcitx5-chewing
+fcitx5-frontend-gtk3
+fcitx5-frontend-gtk4
+fcitx5-frontend-qt5
