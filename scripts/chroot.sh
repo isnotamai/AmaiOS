@@ -8,54 +8,59 @@ export DEBIAN_FRONTEND=noninteractive
 export HOME=/root
 export LC_ALL=C
 
-# ── Fix /dev/null inside chroot ───────────────────────────────────────────────
-# apt-key redirects stderr to /dev/null; if it's missing or wrong type, GPG
-# verification fails with "cannot create /dev/null: Permission denied".
-if [[ ! -c /dev/null ]]; then
-    echo "[chroot] Recreating /dev/null as char device..."
-    rm -f /dev/null
-    mknod -m 0666 /dev/null c 1 3
-fi
-chmod 0666 /dev/null
+# ── Phase 1: Disable GPG checking for the initial bootstrap ──────────────────
+# The Kubuntu live squashfs uses the legacy apt-key which redirects stderr to
+# /dev/null. In some build environments (containers, nodev mounts) that redirect
+# fails with "cannot create /dev/null: Permission denied", and APT refuses to
+# fetch package lists. Bypass GPG entirely for the first apt-get update, then
+# restore it after gpgv is properly installed.
+echo "[chroot] Disabling APT GPG check for bootstrap..."
+mkdir -p /etc/apt/apt.conf.d
+cat > /etc/apt/apt.conf.d/99-amaios-bootstrap <<'APTEOF'
+Acquire::Check-Valid-Until "false";
+Acquire::AllowInsecureRepositories "true";
+APT::Get::AllowUnauthenticated "true";
+APTEOF
 
-# ── Enable universe & multiverse repos ───────────────────────────────────────
-# Many packages (libreoffice, vlc, fcitx5, fonts…) live in universe/multiverse.
+# ── Phase 2: Enable universe & multiverse repos ───────────────────────────────
+# libreoffice, vlc, fcitx5, fonts, etc. live in universe/multiverse.
 echo "[chroot] Enabling universe and multiverse repositories..."
-# Ubuntu 24.04 uses the new DEB822 format (/etc/apt/sources.list.d/ubuntu.sources)
+
+# Ubuntu 24.04 DEB822 format (ubuntu.sources)
 if [[ -f /etc/apt/sources.list.d/ubuntu.sources ]]; then
-    sed -i 's/^Components: main$/Components: main restricted universe multiverse/' \
+    sed -i \
+        's/^Components:.*/Components: main restricted universe multiverse/' \
         /etc/apt/sources.list.d/ubuntu.sources
-    echo "[chroot] Patched ubuntu.sources (DEB822 format)"
+    echo "[chroot] Patched ubuntu.sources (DEB822)"
 fi
 
-# Legacy single-line format
+# Legacy single-line format (sources.list)
 if [[ -f /etc/apt/sources.list ]]; then
     sed -i \
-        -e 's/^deb \(.*\) noble main$/deb \1 noble main restricted universe multiverse/' \
-        -e 's/^deb \(.*\) noble-updates main$/deb \1 noble-updates main restricted universe multiverse/' \
-        -e 's/^deb \(.*\) noble-security main$/deb \1 noble-security main restricted universe multiverse/' \
+        -e '/noble/ s/ main$/ main restricted universe multiverse/' \
+        -e '/noble-updates/ s/ main$/ main restricted universe multiverse/' \
+        -e '/noble-security/ s/ main$/ main restricted universe multiverse/' \
         /etc/apt/sources.list
     echo "[chroot] Patched sources.list"
 fi
 
-# Pre-accept Microsoft fonts EULA (needed by ttf-mscorefonts-installer)
+# ── Phase 3: Update package lists (GPG bypass active) ────────────────────────
+echo "[chroot] Updating package lists..."
+apt-get update -q 2>&1 || true
+
+# ── Phase 4: Install gpgv & restore proper GPG verification ──────────────────
+echo "[chroot] Installing gpgv to restore GPG verification..."
+apt-get install -y --no-install-recommends gpgv gnupg ubuntu-keyring 2>/dev/null || true
+
+# Remove the bootstrap bypass — all further apt operations are authenticated
+rm -f /etc/apt/apt.conf.d/99-amaios-bootstrap
+
+echo "[chroot] Re-running apt-get update with proper GPG..."
+apt-get update -q
+
+# Pre-accept Microsoft fonts EULA (interactive install would block the build)
 echo "ttf-mscorefonts-installer msttcorefonts/accepted-mscorefonts-eula select true" \
     | debconf-set-selections 2>/dev/null || true
-
-# ── Update package lists ──────────────────────────────────────────────────────
-echo "[chroot] Updating package lists..."
-apt-get update -q 2>&1 | grep -v "^W: " || true   # suppress warnings, not errors
-# If GPG is still broken, retry without authentication (keys will be fixed by ubuntu-keyring)
-if ! apt-get update -q 2>/dev/null; then
-    echo "[chroot] Retrying apt-get update with relaxed GPG checks..."
-    apt-get update -q \
-        -o Acquire::AllowInsecureRepositories=true \
-        -o APT::Get::AllowUnauthenticated=true 2>/dev/null || true
-fi
-
-# Ensure gpgv is installed so subsequent apt operations work correctly
-apt-get install -y --no-install-recommends gpgv gnupg 2>/dev/null || true
-apt-get update -q 2>/dev/null || true
 
 # ── Remove packages ───────────────────────────────────────────────────────────
 echo "[chroot] Removing unwanted packages..."
